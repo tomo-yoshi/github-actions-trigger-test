@@ -1,0 +1,62 @@
+name: Chromatic Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/chromatic-ondemand-deployment.yml'
+      - 'README.md'
+  issue_comment:
+    types: [created]
+
+jobs:
+  chromatic-deployment:
+    runs-on: ubuntu-latest
+
+    # This workflow runs Chromatic deployment when:
+    # 1. Push to "main" branch
+    # 2. Comment containing "@chromatic-run" is posted on a PR
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@chromatic-run'))
+
+    steps:
+      - name: Debug - Show trigger information
+        run: |
+          echo "=== GitHub Actions Trigger Debug ==="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run number: ${{ github.run_number }}"
+          
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo ""
+            echo "=== Push Trigger Details ==="
+            echo "Branch: ${{ github.ref_name }}"
+            echo "Commit SHA: ${{ github.sha }}"
+            echo "Commit message: ${{ github.event.head_commit.message }}"
+            echo "Author: ${{ github.event.head_commit.author.name }}"
+            echo "Committer: ${{ github.event.head_commit.committer.name }}"
+          fi
+          
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo ""
+            echo "=== Issue Comment Trigger Details ==="
+            echo "Comment body: ${{ github.event.comment.body }}"
+            echo "Comment author: ${{ github.event.comment.user.login }}"
+            echo "Issue number: ${{ github.event.issue.number }}"
+            echo "Issue title: ${{ github.event.issue.title }}"
+            echo "Issue state: ${{ github.event.issue.state }}"
+            echo "PR URL: ${{ github.event.issue.pull_request.html_url }}"
+            echo "Repository: ${{ github.event.repository.full_name }}"
+          fi
+          
+          echo ""
+          echo "=== Context Information ==="
+          echo "GitHub API URL: ${{ github.api_url }}"
+          echo "GitHub GraphQL URL: ${{ github.graphql_url }}"
+          echo "GitHub Server URL: ${{ github.server_url }}"
