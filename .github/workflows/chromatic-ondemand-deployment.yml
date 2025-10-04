@@ -57,16 +57,30 @@ jobs:
         with:
           script: |
             console.log('Creating check run for PR #' + context.payload.issue.number);
+            console.log('Repository:', context.repo.owner + '/' + context.repo.repo);
+            console.log('Issue number from payload:', context.payload.issue.number);
             
             try {
+              // Get the PR details
               const { data: pr } = await github.rest.pulls.get({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 pull_number: context.payload.issue.number
               });
               
-              console.log('PR head SHA:', pr.head.sha);
-              console.log('PR title:', pr.title);
+              console.log('PR details:');
+              console.log('- PR number:', pr.number);
+              console.log('- PR title:', pr.title);
+              console.log('- PR head SHA:', pr.head.sha);
+              console.log('- PR head ref:', pr.head.ref);
+              console.log('- PR base SHA:', pr.base.sha);
+              console.log('- PR base ref:', pr.base.ref);
+              console.log('- PR state:', pr.state);
+              console.log('- PR head repo:', pr.head.repo.full_name);
+              console.log('- PR base repo:', pr.base.repo.full_name);
+              
+              // Verify we're creating the check run on the correct commit
+              console.log('Creating check run on commit:', pr.head.sha);
               
               const checkRun = await github.rest.checks.create({
                 owner: context.repo.owner,
@@ -76,18 +90,33 @@ jobs:
                 status: 'in_progress',
                 output: {
                   title: 'Chromatic Deployment Test',
-                  summary: 'Testing comment-triggered deployment...'
+                  summary: `Testing comment-triggered deployment for PR #${pr.number}: ${pr.title}`
                 }
               });
               
-              console.log('Check run created with ID:', checkRun.data.id);
+              console.log('Check run created successfully:');
+              console.log('- Check run ID:', checkRun.data.id);
+              console.log('- Check run name:', checkRun.data.name);
+              console.log('- Check run head SHA:', checkRun.data.head_sha);
+              console.log('- Check run URL:', checkRun.data.html_url);
+              
               return checkRun.data.id;
             } catch (error) {
               console.log('Failed to create check run:', error.message);
+              console.log('Error details:', error);
               console.log('This might be due to insufficient permissions or PR from fork');
               console.log('Continuing without check run...');
               return null;
             }
+
+      # Verify check run was created on correct commit
+      - name: Verify check run location
+        if: github.event_name == 'issue_comment' && steps.create-check.outputs.result != 'null'
+        run: |
+          echo "=== Check Run Verification ==="
+          echo "Check run ID: ${{ steps.create-check.outputs.result }}"
+          echo "This check run should appear on the PR where the comment was posted"
+          echo "If it appears on other PRs, there might be an issue with the commit SHA"
 
       # Simulate some work
       - name: Simulate deployment work
