@@ -1,0 +1,181 @@
+name: Chromatic Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/chromatic-ondemand-deployment.yml'
+      - 'README.md'
+  issue_comment:
+    types: [created]
+
+jobs:
+  chromatic-deployment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: read
+
+    # This workflow runs Chromatic deployment when:
+    # 1. Push to "main" branch
+    # 2. Comment containing "@chromatic-run-fail" is posted on a PR
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@chromatic-run-fail'))
+
+    steps:
+      - name: Debug - Show trigger information
+        run: |
+          echo "=== GitHub Actions Trigger Debug ==="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run number: ${{ github.run_number }}"
+          
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo ""
+            echo "=== Issue Comment Trigger Details ==="
+            echo "Comment body: ${{ github.event.comment.body }}"
+            echo "Comment author: ${{ github.event.comment.user.login }}"
+            echo "Issue number: ${{ github.event.issue.number }}"
+            echo "Issue title: ${{ github.event.issue.title }}"
+            echo "Issue state: ${{ github.event.issue.state }}"
+            echo "PR URL: ${{ github.event.issue.pull_request.html_url }}"
+            echo "Repository: ${{ github.event.repository.full_name }}"
+          fi
+
+      # Create check run for comment-triggered deployments to appear in PR checks
+      - name: Create check run for PR
+        if: github.event_name == 'issue_comment'
+        id: create-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('Creating check run for PR #' + context.payload.issue.number);
+            console.log('Repository:', context.repo.owner + '/' + context.repo.repo);
+            console.log('Issue number from payload:', context.payload.issue.number);
+            
+            try {
+              // Get the PR details
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.issue.number
+              });
+              
+              console.log('PR details:');
+              console.log('- PR number:', pr.number);
+              console.log('- PR title:', pr.title);
+              console.log('- PR head SHA:', pr.head.sha);
+              console.log('- PR head ref:', pr.head.ref);
+              console.log('- PR base SHA:', pr.base.sha);
+              console.log('- PR base ref:', pr.base.ref);
+              console.log('- PR state:', pr.state);
+              console.log('- PR head repo:', pr.head.repo.full_name);
+              console.log('- PR base repo:', pr.base.repo.full_name);
+              
+              // Verify we're creating the check run on the correct commit
+              console.log('Creating check run on commit:', pr.head.sha);
+              
+              const checkRun = await github.rest.checks.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'Chromatic Failure Deployment Test',
+                head_sha: pr.head.sha,
+                status: 'in_progress',
+                output: {
+                  title: 'Chromatic Failure Deployment Test',
+                  summary: `Testing comment-triggered deployment for PR #${pr.number}: ${pr.title}`
+                }
+              });
+              
+              console.log('Check run created successfully:');
+              console.log('- Check run ID:', checkRun.data.id);
+              console.log('- Check run name:', checkRun.data.name);
+              console.log('- Check run head SHA:', checkRun.data.head_sha);
+              console.log('- Check run URL:', checkRun.data.html_url);
+              
+              return checkRun.data.id;
+            } catch (error) {
+              console.log('Failed to create check run:', error.message);
+              console.log('Error details:', error);
+              console.log('This might be due to insufficient permissions or PR from fork');
+              console.log('Continuing without check run...');
+              return null;
+            }
+
+      # Verify check run was created on correct commit
+      - name: Verify check run location
+        if: github.event_name == 'issue_comment' && steps.create-check.outputs.result != 'null'
+        run: |
+          echo "=== Check Run Verification ==="
+          echo "Check run ID: ${{ steps.create-check.outputs.result }}"
+          echo "This check run should appear on the PR where the comment was posted"
+          echo "If it appears on other PRs, there might be an issue with the commit SHA"
+
+      # Simulate deployment work with intentional failure
+      - name: Simulate deployment work
+        run: |
+          echo "Simulating deployment work..."
+          sleep 3
+          echo "Deployment process started..."
+          sleep 2
+          echo "❌ Simulating deployment failure for testing purposes"
+          echo "This is an intentional failure to test the check run failure display"
+          exit 1
+
+      # Update check run status for comment-triggered deployments
+      - name: Update check run - Success
+        if: github.event_name == 'issue_comment' && success() && steps.create-check.outputs.result != 'null'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const checkRunId = '${{ steps.create-check.outputs.result }}';
+            console.log('Updating check run to success for ID:', checkRunId);
+            
+            if (checkRunId && checkRunId !== 'null') {
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: checkRunId,
+                status: 'completed',
+                conclusion: 'success',
+                output: {
+                  title: 'Chromatic Failure Deployment Test',
+                  summary: '✅ Test deployment completed successfully! This was triggered by comment: "${{ github.event.comment.body }}"'
+                }
+              });
+              console.log('Check run updated successfully');
+            } else {
+              console.log('No check run to update');
+            }
+
+      - name: Update check run - Failure
+        if: github.event_name == 'issue_comment' && failure() && steps.create-check.outputs.result != 'null'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const checkRunId = '${{ steps.create-check.outputs.result }}';
+            console.log('Updating check run to failure for ID:', checkRunId);
+            
+            if (checkRunId && checkRunId !== 'null') {
+              await github.rest.checks.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                check_run_id: checkRunId,
+                status: 'completed',
+                conclusion: 'failure',
+                output: {
+                  title: 'Chromatic Failure Deployment Test',
+                  summary: '❌ Test deployment failed. This was triggered by comment: "${{ github.event.comment.body }}"'
+                }
+              });
+              console.log('Check run updated successfully');
+            } else {
+              console.log('No check run to update');
+            }
