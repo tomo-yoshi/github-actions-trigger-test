@@ -33,16 +33,6 @@ jobs:
           echo "Run ID: ${{ github.run_id }}"
           echo "Run number: ${{ github.run_number }}"
           
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo ""
-            echo "=== Push Trigger Details ==="
-            echo "Branch: ${{ github.ref_name }}"
-            echo "Commit SHA: ${{ github.sha }}"
-            echo "Commit message: ${{ github.event.head_commit.message }}"
-            echo "Author: ${{ github.event.head_commit.author.name }}"
-            echo "Committer: ${{ github.event.head_commit.committer.name }}"
-          fi
-          
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
             echo ""
             echo "=== Issue Comment Trigger Details ==="
@@ -54,9 +44,82 @@ jobs:
             echo "PR URL: ${{ github.event.issue.pull_request.html_url }}"
             echo "Repository: ${{ github.event.repository.full_name }}"
           fi
-          
-          echo ""
-          echo "=== Context Information ==="
-          echo "GitHub API URL: ${{ github.api_url }}"
-          echo "GitHub GraphQL URL: ${{ github.graphql_url }}"
-          echo "GitHub Server URL: ${{ github.server_url }}"
+
+      # Create check run for comment-triggered deployments to appear in PR checks
+      - name: Create check run for PR
+        if: github.event_name == 'issue_comment'
+        id: create-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('Creating check run for PR #' + context.payload.issue.number);
+            
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.issue.number
+            });
+            
+            console.log('PR head SHA:', pr.head.sha);
+            console.log('PR title:', pr.title);
+            
+            const checkRun = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Chromatic Deployment Test',
+              head_sha: pr.head.sha,
+              status: 'in_progress',
+              output: {
+                title: 'Chromatic Deployment Test',
+                summary: 'Testing comment-triggered deployment...'
+              }
+            });
+            
+            console.log('Check run created with ID:', checkRun.data.id);
+            return checkRun.data.id;
+
+      # Simulate some work
+      - name: Simulate deployment work
+        run: |
+          echo "Simulating deployment work..."
+          sleep 5
+          echo "Work completed successfully!"
+
+      # Update check run status for comment-triggered deployments
+      - name: Update check run - Success
+        if: github.event_name == 'issue_comment' && success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('Updating check run to success for ID:', '${{ steps.create-check.outputs.result }}');
+            
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.create-check.outputs.result }},
+              status: 'completed',
+              conclusion: 'success',
+              output: {
+                title: 'Chromatic Deployment Test',
+                summary: '✅ Test deployment completed successfully! This was triggered by comment: "${{ github.event.comment.body }}"'
+              }
+            });
+
+      - name: Update check run - Failure
+        if: github.event_name == 'issue_comment' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            console.log('Updating check run to failure for ID:', '${{ steps.create-check.outputs.result }}');
+            
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.create-check.outputs.result }},
+              status: 'completed',
+              conclusion: 'failure',
+              output: {
+                title: 'Chromatic Deployment Test',
+                summary: '❌ Test deployment failed. This was triggered by comment: "${{ github.event.comment.body }}"'
+              }
+            });
