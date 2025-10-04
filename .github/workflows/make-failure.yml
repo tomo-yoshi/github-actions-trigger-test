@@ -20,10 +20,10 @@ jobs:
 
     # This workflow runs Chromatic deployment when:
     # 1. Push to "main" branch
-    # 2. Comment containing "@chromatic-run" is posted on a PR
+    # 2. Comment containing "@chromatic-run-fail" is posted on a PR
     if: |
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@chromatic-run'))
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@chromatic-run-fail'))
 
     steps:
       - name: Debug - Show trigger information
@@ -85,11 +85,11 @@ jobs:
               const checkRun = await github.rest.checks.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                name: 'Chromatic Deployment Test',
+                name: 'Chromatic Failure Deployment Test',
                 head_sha: pr.head.sha,
                 status: 'in_progress',
                 output: {
-                  title: 'Chromatic Deployment Test',
+                  title: 'Chromatic Failure Deployment Test',
                   summary: `Testing comment-triggered deployment for PR #${pr.number}: ${pr.title}`
                 }
               });
@@ -118,12 +118,16 @@ jobs:
           echo "This check run should appear on the PR where the comment was posted"
           echo "If it appears on other PRs, there might be an issue with the commit SHA"
 
-      # Simulate some work
+      # Simulate deployment work with intentional failure
       - name: Simulate deployment work
         run: |
           echo "Simulating deployment work..."
-          sleep 5
-          echo "Work completed successfully!"
+          sleep 3
+          echo "Deployment process started..."
+          sleep 2
+          echo "❌ Simulating deployment failure for testing purposes"
+          echo "This is an intentional failure to test the check run failure display"
+          exit 1
 
       # Update check run status for comment-triggered deployments
       - name: Update check run - Success
@@ -142,7 +146,7 @@ jobs:
                 status: 'completed',
                 conclusion: 'success',
                 output: {
-                  title: 'Chromatic Deployment Test',
+                  title: 'Chromatic Failure Deployment Test',
                   summary: '✅ Test deployment completed successfully! This was triggered by comment: "${{ github.event.comment.body }}"'
                 }
               });
@@ -167,7 +171,7 @@ jobs:
                 status: 'completed',
                 conclusion: 'failure',
                 output: {
-                  title: 'Chromatic Deployment Test',
+                  title: 'Chromatic Failure Deployment Test',
                   summary: '❌ Test deployment failed. This was triggered by comment: "${{ github.event.comment.body }}"'
                 }
               });
