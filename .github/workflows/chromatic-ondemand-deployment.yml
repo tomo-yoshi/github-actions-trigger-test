@@ -118,12 +118,16 @@ jobs:
           echo "This check run should appear on the PR where the comment was posted"
           echo "If it appears on other PRs, there might be an issue with the commit SHA"
 
-      # Simulate some work
+      # Simulate deployment work with intentional failure
       - name: Simulate deployment work
         run: |
           echo "Simulating deployment work..."
-          sleep 5
-          echo "Work completed successfully!"
+          sleep 3
+          echo "Deployment process started..."
+          sleep 2
+          echo "❌ Simulating deployment failure for testing purposes"
+          echo "This is an intentional failure to test the check run failure display"
+          exit 1
 
       # Update check run status for comment-triggered deployments
       - name: Update check run - Success
